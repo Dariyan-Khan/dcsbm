@@ -1,5 +1,8 @@
 #! /usr/bin/env python3
 import numpy as np
+from tqdm import tqdm
+import os
+
 
 ## Parameters
 n = 1000
@@ -54,13 +57,17 @@ X_sim = rhos_sim.reshape(-1,1) * m[z_sim]
 Delta_inv = np.linalg.inv(np.matmul(X_sim.T,X_sim) / J)
 Delta_prods = np.zeros((J,2,2))
 Delta_est = np.zeros((len(indices),2,2))
-for i in range(len(indices)):
+print(f"Simulation to obtain the required expectations")
+for i in tqdm(range(len(indices))):
     x = X[indices[i]].reshape(-1,1)
     for j in range(J):
         X1 = X_sim[j].reshape(-1,1)
         xX1 = np.matmul(x.T,X1)
         Delta_prods[j] = (xX1 - (xX1 ** 2)) * np.matmul(X1, X1.T)
     Delta_est[i] = np.matmul(np.matmul(Delta_inv, np.mean(Delta_prods,axis=0)), Delta_inv) / n
+
+
+tqdm._instances.clear() # Clears previous tqdm instances to fix problem with bars being printed on multiple lines
 
 ## Function to extract the parameters required by pgfplots
 def ellipse_parameters(Delta):
@@ -84,15 +91,16 @@ for i in range(len(indices)):
         print('\draw[rotate around={',f'{ax:.3f}',':(axis cs: ',loc,')}] (axis cs: ',loc,') circle [',string_radii,'];',sep='')
     print('')
 
-simulate_points = False
+simulate_points = not(os.path.exists('./emb_900.csv') and os.path.exists('./emb_400.csv'))
 if simulate_points:
+    print("Simulating points")
     ## Simulation
     np.random.seed(117)
     JJ = 1000
     U = np.zeros((JJ,2))
     V = np.zeros((JJ,2))
     P = np.matmul(X,X.T)
-    for j in range(JJ):
+    for j in tqdm(range(JJ)):
         print('\rSimulation: ', str(j+1), '/', str(JJ), sep='', end='')
         A2 = np.tril(np.random.binomial(n=1,p=P), k=-1)
         A_sim = A2 + A2.T
