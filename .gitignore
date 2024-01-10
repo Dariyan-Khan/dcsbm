@@ -10,3 +10,7 @@ simulation_bipartite.py
 ICL/
 Results_Bipartite/
 rotations_old.py
+*.csv
+*.pdf
+*.tex
+

@@ -2,6 +2,7 @@ import numpy as np
 from scipy.stats import beta
 from scipy.linalg import orthogonal_procrustes
 import matplotlib.pyplot as plt
+import tqdm
 
 np.random.seed(45)
 
@@ -18,14 +19,14 @@ def find_delta_inv(μ_1, μ_2, exp_rho):
 def exp_X1_inner_func(x, ρ, μ):
     return (np.dot(x, ρ*μ) - (np.dot(x, ρ*μ)**2)) * np.outer(ρ*μ, ρ*μ)
 
-def covariance_estimate(x, num, μ_1, μ_2, prior, exp_rho, N_ρ=1000):
+def covariance_estimate(x, μ_1, μ_2, prior, exp_rho, N_ρ=1000, N_t=1000):
     ρ_samples_1 = np.array([prior() for _ in range(N_ρ)])
     ρ_samples_2 = np.array([prior() for _ in range(N_ρ)])
     μ_1_integral_estimate = (1 / N_ρ) * sum(exp_X1_inner_func(x, ρ, μ_1) for ρ in ρ_samples_1)
     μ_2_integral_estimate = (1 / N_ρ) * sum(exp_X1_inner_func(x, ρ, μ_2) for ρ in ρ_samples_2)
     exp_X1_func_estimate = 0.5 * (μ_1_integral_estimate + μ_2_integral_estimate)
     Δ_inv = find_delta_inv(μ_1, μ_2, exp_rho)
-    return (Δ_inv @ exp_X1_func_estimate @ Δ_inv) / N_ρ
+    return (Δ_inv @ exp_X1_func_estimate @ Δ_inv) / N_t
 
 def check_symmetric(a, rtol=1e-05, atol=1e-08):
     return np.allclose(a, a.T, rtol=rtol, atol=atol)
@@ -72,17 +73,18 @@ def spectral_emb(μ_1, μ_2, prior, N_t=1000):
     spectral_emb = spectral_emb @ best_orthog_mat[0]
     return spectral_emb
 
-def clt_sample(prior, μ_1, μ_2, N_t=1000):
+def clt_sample(prior, μ_1, μ_2, exp_rho, N_t=1000):
     group_1_samples = []
     ρ_1_samples = []
 
     group_mean = μ_1
 
-    for _ in range(N_t):
+    for _ in tqdm.tqdm(range(N_t)):
         # sample the ρ's
         ρ = prior()
-        group_1_samples.append(np.random.multivariate_normal(ρ*group_mean,
-                            covariance_estimate(ρ*group_mean, N_t)))
+        group_1_samples.append(np.random.multivariate_normal(ρ*group_mean,        
+                            covariance_estimate(ρ*group_mean, μ_1, 
+                                                μ_2, prior, exp_rho)))
 
         ρ_1_samples.append(ρ)
 
@@ -94,12 +96,12 @@ def clt_sample(prior, μ_1, μ_2, N_t=1000):
     ρ_2_samples = []
 
     group_mean = μ_2
-    for _ in range(N_t):
+    for _ in tqdm.tqdm(range(N_t)):
         # sample the ρ's
         ρ = prior()
         group_2_samples.append(np.random.multivariate_normal(ρ*group_mean,
-                            covariance_estimate(ρ*group_mean, N_t)))
-        
+                            covariance_estimate(ρ*group_mean, μ_1, 
+                                                μ_2, prior, exp_rho)))
         ρ_2_samples.append(ρ)
 
     group_2_samples = np.array(group_2_samples)
@@ -109,10 +111,10 @@ def clt_sample(prior, μ_1, μ_2, N_t=1000):
 
     true_hat_means = np.zeros((2*N_t, 2))
 
-    for i in range(N_t):
+    for i in tqdm.tqdm(range(N_t)):
         true_hat_means[i, :] =  all_hat_ρ[i] * μ_1 # ρ_1_samples
 
-    for i in range(N_t,2*N_t):
+    for i in tqdm.tqdm(range(N_t,2*N_t)):
         true_hat_means[i, :] =  all_hat_ρ[i] * μ_2
     
     best_orthog_mat_hat = orthogonal_procrustes(all_hat_samples, true_hat_means)
@@ -125,27 +127,26 @@ def exp_matrix_A_func(x, ρ, μ):
 def exp_matrix_B_func(x, ρ, μ):
     return (np.dot(x, ρ*μ)**2) * np.outer(ρ*μ, ρ*μ)
 
-def mvn_assump_samples(x, matrix_func_A, matrix_func_B, μ_1, μ_2, prior, exp_rho, second_mom_rho, N_ρ=1000, N_t=1000):
+def mvn_assump_samples(matrix_func_A, matrix_func_B, μ_1, μ_2, prior, exp_rho, second_mom_rho, N_ρ=1000, N_t=1000):
     ρ_samples_1 = np.array([prior() for _ in range(N_ρ)])
     ρ_samples_2 = np.array([prior() for _ in range(N_ρ)])
-    μ_1_integral_estimate = (1 / N_ρ) * sum(matrix_func_A(x, ρ, μ_1) for ρ in ρ_samples_1)
-    μ_2_integral_estimate= (1 / N_ρ) * sum(matrix_func_B(x, ρ, μ_2) for ρ in ρ_samples_2)
-    exp_matrix_innner_func_estimate = 0.5 * (μ_1_integral_estimate + μ_2_integral_estimate)
+    μ_1_integral_estimate = lambda x, mat_func: (1 / N_ρ) * sum(mat_func(x, ρ, μ_1) for ρ in ρ_samples_1)
+    μ_2_integral_estimate = lambda x, mat_func: (1 / N_ρ) * sum(mat_func(x, ρ, μ_2) for ρ in ρ_samples_2)
+    exp_matrix_innner_func_estimate =  lambda x, mat_func: 0.5 * (μ_1_integral_estimate(x, mat_func) + μ_2_integral_estimate(x, mat_func))
     Δ_inv = find_delta_inv(μ_1, μ_2, exp_rho)
-    cov_matrix_func_estimate = (Δ_inv @ exp_matrix_innner_func_estimate @ Δ_inv) / N_t
+    cov_matrix_func_estimate = lambda x, mat_func: (Δ_inv @ exp_matrix_innner_func_estimate(x,mat_func) @ Δ_inv) / N_t
 
-    A_dash_1 = cov_matrix_func_estimate(μ_1, matrix_func_A, N_t)
-    B_dash_1 = cov_matrix_func_estimate(μ_1, matrix_func_B, N_t)
+    A_dash_1 = cov_matrix_func_estimate(μ_1, matrix_func_A)
+    B_dash_1 = cov_matrix_func_estimate(μ_1, matrix_func_B)
 
     mvn_cov_1 = (A_dash_1 * exp_rho) - (B_dash_1 * second_mom_rho)
 
-    A_dash_2 = cov_matrix_func_estimate(μ_2, matrix_func_A, N_t)
-    B_dash_2 = cov_matrix_func_estimate(μ_2, matrix_func_B, N_t)
+    A_dash_2 = cov_matrix_func_estimate(μ_2, matrix_func_A)
+    B_dash_2 = cov_matrix_func_estimate(μ_2, matrix_func_B)
 
     mvn_cov_2 = (A_dash_2 * exp_rho) - (B_dash_2 * second_mom_rho)
 
     mvn_1_assumption_samples = [np.random.multivariate_normal(0.5 * μ_1, mvn_cov_1) for _ in range(1000)]
-
     mvn_2_assumption_samples = [np.random.multivariate_normal((0.5 * μ_2), mvn_cov_2) for _ in range(1000)]
 
     mvn1_x = [mvn_sample[0] for mvn_sample in mvn_1_assumption_samples]
@@ -156,26 +157,32 @@ def mvn_assump_samples(x, matrix_func_A, matrix_func_B, μ_1, μ_2, prior, exp_r
 
     return mvn1_x, mvn1_y, mvn2_x, mvn2_y
 
+def mvn_assump_samples_wrapper(μ_1, μ_2, prior, exp_rho, second_mom_rho, N_ρ=1000, N_t=1000):
+    return mvn_assump_samples(exp_matrix_A_func, exp_matrix_B_func, μ_1, 
+                              μ_2, prior, exp_rho, second_mom_rho, N_ρ=N_ρ,
+                              N_t=N_t)
+
+
 def exp_X1_inner_func_assump(x, ρ, exp_rho, μ):
     return ((np.dot(x, ρ*μ) / exp_rho) - (np.dot(x, ρ*μ)**2)) * np.outer(ρ*μ, ρ*μ)
 
-def covariance_under_assump(single_rho, μ_1, μ_2, prior, exp_rho, N_ρ=1000, N_t=1000):
+def covariance_under_assump(ρ, μ_1, μ_2, prior, exp_rho, N_ρ=1000, N_t=1000):
     ρ_samples_1 = np.array([prior() for _ in range(N_ρ)])
     ρ_samples_2 = np.array([prior() for _ in range(N_ρ)])
-    μ_1_integral_estimate = (1 / N_ρ) * sum(exp_X1_inner_func_assump(μ_1, ρ, μ_1) for ρ in ρ_samples_1)
-    μ_2_integral_estimate = (1 / N_ρ) * sum(exp_X1_inner_func_assump(μ_2, ρ, μ_2) for ρ in ρ_samples_2)
+    μ_1_integral_estimate = (1 / N_ρ) * sum(exp_X1_inner_func_assump(μ_1, ρ, exp_rho, μ_1) for ρ in ρ_samples_1)
+    μ_2_integral_estimate = (1 / N_ρ) * sum(exp_X1_inner_func_assump(μ_2, ρ, exp_rho,  μ_2) for ρ in ρ_samples_2)
     exp_X1_func_estimate_assump = 0.5 * (μ_1_integral_estimate + μ_2_integral_estimate)  # CHECK THIS LINE
     Δ_inv = find_delta_inv(μ_1, μ_2, exp_rho)
-    covariance_estimate_assump = single_rho**2 * (Δ_inv @ exp_X1_func_estimate_assump @ Δ_inv) / N_t
+    covariance_estimate_assump = ρ**2 * (Δ_inv @ exp_X1_func_estimate_assump @ Δ_inv) / N_t
     return covariance_estimate_assump
 
-def samples_under_assump(single_rho, μ_1, μ_2, prior, exp_rho, N_ρ=1000, N_t=1000):
+def samples_under_assump(μ_1, μ_2, prior, exp_rho, N_ρ=1000, N_t=1000):
     # group 1
     group_1_samples_assump = []
     ρ_1_samples_assump = []
 
     group_mean = μ_1
-    for i in range(N_t):
+    for i in tqdm.tqdm(range(N_t)):
         # sample the ρ's
         ρ = prior()
         group_1_samples_assump.append(np.random.multivariate_normal(ρ*group_mean,
@@ -193,7 +200,7 @@ def samples_under_assump(single_rho, μ_1, μ_2, prior, exp_rho, N_ρ=1000, N_t=
     ρ_2_samples_assump = []
 
     group_mean = μ_2
-    for i in range(N_t):
+    for i in tqdm.tqdm(range(N_t)):
         # sample the ρ's
         ρ = prior()
 
@@ -211,16 +218,35 @@ def samples_under_assump(single_rho, μ_1, μ_2, prior, exp_rho, N_ρ=1000, N_t=
 
     true_hat_means_assump = np.zeros((2*N_t, 2))
 
-    for i in range(N_t):
+    for i in tqdm.tqdm(range(N_t)):
         true_hat_means_assump[i, :] =  ρ_1_samples_assump[i] * μ_1
 
-    for i in range(N_t,2*N_t):
+    for i in tqdm.tqdm(range(N_t,2*N_t)):
         true_hat_means_assump[i, :] =  all_hat_ρ_assump[i] * μ_2
 
 
     best_orthog_mat_hat_assump = orthogonal_procrustes(all_hat_samples_assump, true_hat_means_assump)
     all_hat_samples_assump = all_hat_samples_assump @ best_orthog_mat_hat_assump[0]
     return all_hat_samples_assump
+
+def plot_spherical_data(zipped_data, μ_1, μ_2, title):
+    colours = ["red", "green", "blue", "orange", "purple", "black", "grey"]
+    for x, y in zipped_data:
+        plt.scatter(x,y, color=colours.pop(0))
+
+    xrange = np.linspace(-3, 3, 1000)
+
+    plt.scatter(xrange, (μ_1[1] / μ_1[0])*xrange, color=colours.pop(0))
+    plt.scatter(xrange, (μ_2[1]/μ_2[0])*xrange, color=colours.pop(0))
+
+    plt.xlim(-0.5, 1)
+    plt.ylim(-0.5, 1)
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.title(title)
+    plt.show()
+
+
 
 
 
