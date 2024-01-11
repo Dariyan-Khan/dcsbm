@@ -3,6 +3,7 @@ from scipy.stats import beta
 from scipy.linalg import orthogonal_procrustes
 import matplotlib.pyplot as plt
 import tqdm
+import pickle
 
 np.random.seed(45)
 
@@ -246,7 +247,32 @@ def plot_spherical_data(zipped_data, μ_1, μ_2, title):
     plt.title(title)
     plt.show()
 
+def print_pickle_data(pkl_file):
+    with open(pkl_file, 'rb') as file:
+        # Load the contents of the file
+        spectral_embedding = pickle.load(file)
+        samples_from_clt = pickle.load(file)
+        (mvn1_x, mvn1_y, mvn2_x, mvn2_y) = pickle.load(file)
+        under_mean_assump = pickle.load(file)
+        wass_dist_group_1 = pickle.load(file)
+        wass_dist_group_2 = pickle.load(file)
 
+        print(f"""
+        spectral_embedding: {spectral_embedding}
+
+        samples_from_clt: {samples_from_clt}
+
+        (mvn1_x, mvn1_y, mvn2_x, mvn2_y): {(mvn1_x, mvn1_y, mvn2_x, mvn2_y)}
+
+        under_mean_assump: {under_mean_assump}
+
+        wass_dist_group_1: {wass_dist_group_1}
+
+        wass_dist_group_2: {wass_dist_group_2}
+            """)
+        
+        return spectral_embedding, samples_from_clt,(mvn1_x, mvn1_y, mvn2_x, mvn2_y),\
+        under_mean_assump, wass_dist_group_1, wass_dist_group_2
 
 
 
