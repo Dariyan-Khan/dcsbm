@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.stats import beta
+from scipy.stats import beta, wasserstein_distance
 from scipy.linalg import orthogonal_procrustes
 import matplotlib.pyplot as plt
 import tqdm
@@ -147,8 +147,8 @@ def mvn_assump_samples(matrix_func_A, matrix_func_B, μ_1, μ_2, prior, exp_rho,
 
     mvn_cov_2 = (A_dash_2 * exp_rho) - (B_dash_2 * second_mom_rho)
 
-    mvn_1_assumption_samples = [np.random.multivariate_normal(0.5 * μ_1, mvn_cov_1) for _ in range(1000)]
-    mvn_2_assumption_samples = [np.random.multivariate_normal((0.5 * μ_2), mvn_cov_2) for _ in range(1000)]
+    mvn_1_assumption_samples = [np.random.multivariate_normal(0.5 * μ_1, mvn_cov_1) for _ in range(N_t)]
+    mvn_2_assumption_samples = [np.random.multivariate_normal((0.5 * μ_2), mvn_cov_2) for _ in range(N_t)]
 
     mvn1_x = [mvn_sample[0] for mvn_sample in mvn_1_assumption_samples]
     mvn1_y = [mvn_sample[1] for mvn_sample in mvn_1_assumption_samples]
@@ -247,6 +247,7 @@ def plot_spherical_data(zipped_data, μ_1, μ_2, title):
     plt.title(title)
     plt.show()
 
+
 def print_pickle_data(pkl_file):
     with open(pkl_file, 'rb') as file:
         # Load the contents of the file
@@ -273,6 +274,43 @@ def print_pickle_data(pkl_file):
         
         return spectral_embedding, samples_from_clt,(mvn1_x, mvn1_y, mvn2_x, mvn2_y),\
         under_mean_assump, wass_dist_group_1, wass_dist_group_2
+
+def pickle_grid_data(filename, *data):
+    with open(filename, 'wb') as file:
+        for dat in data:
+            pickle.dump(dat, file)
+
+
+def calculate_avg_wass_dist(prior, μ_1, μ_2, exp_rho, second_mom_rho, N_t=1000, N_ρ=10_000, save_data=True, filename=None):
+    if save_data and filename is None:
+        raise FileNotFoundError("Enter a filename")
+    
+    samples_from_clt = clt_sample(prior, μ_1, μ_2, exp_rho, N_t=N_t)
+    mvn1_x, mvn1_y, mvn2_x, mvn2_y = mvn_assump_samples_wrapper(μ_1, μ_2, prior, exp_rho, second_mom_rho,\
+                                                                N_ρ=N_ρ, N_t=N_t)
+
+    sph_trans_clt_group_1 = np.arctan2(samples_from_clt[:N_t,1], samples_from_clt[:N_t,0])
+    sph_trans_clt_group_2 = np.arctan2(samples_from_clt[N_t:,1], samples_from_clt[N_t:,0])
+
+    sph_trans_mvn_group_1 = np.arctan2(mvn1_y, mvn1_x)
+    sph_trans_mvn_group_2 = np.arctan2(mvn2_y, mvn2_x)
+
+    wass_dist_group_1 = wasserstein_distance(sph_trans_clt_group_1, sph_trans_mvn_group_1)
+    wass_dist_group_2 = wasserstein_distance(sph_trans_clt_group_2, sph_trans_mvn_group_2)
+    avg_wass_dist = (wass_dist_group_1 + wass_dist_group_2) / 2
+
+    if save_data:
+        if filename is None:
+            raise FileNotFoundError("Enter a filename")
+        pickle_grid_data(filename, samples_from_clt, (mvn1_x, mvn1_y, mvn2_x, mvn2_y), 
+                         wass_dist_group_1, wass_dist_group_2, avg_wass_dist)
+
+    return avg_wass_dist
+
+
+
+
+
 
 
 

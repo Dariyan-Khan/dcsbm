@@ -13,4 +13,4 @@ rotations_old.py
 *.csv
 *.pdf
 *.tex
-
+*.pkl
